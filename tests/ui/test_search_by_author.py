@@ -4,7 +4,7 @@ from pathlib import Path
 
 import allure
 import pytest
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import StaleElementReferenceException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.support import expected_conditions as EC
@@ -23,11 +23,10 @@ def test_search_by_author(driver: WebDriver) -> None:
     with allure.step("Открыть сайт Читай-город"):
         driver.get(config["site_url"])
 
-    with allure.step("Найти книги автора Стивен Кинг"):
+    with allure.step("Ввести имя автора и дождаться подсказки"):
         search_input = wait.until(
             EC.element_to_be_clickable((By.ID, "app-search"))
         )
-
         search_input.send_keys("Стивен Кинг")
 
         wait.until(
@@ -37,6 +36,7 @@ def test_search_by_author(driver: WebDriver) -> None:
             ))
         )
 
+    with allure.step("Нажать кнопку поиска"):
         search_button = wait.until(
             EC.element_to_be_clickable((
                 By.CSS_SELECTOR,
@@ -45,24 +45,28 @@ def test_search_by_author(driver: WebDriver) -> None:
         )
         search_button.click()
 
-    with allure.step("Убедиться в переходе на страницу поиска"):
+    with allure.step("Дождаться страницы поиска"):
+        wait.until(EC.url_contains("/search/stiven-king"))
 
-        try:
-            wait.until(EC.url_contains("/search/stiven-king"))
+    with allure.step("Убедиться, что найдены книги Стивена Кинга"):
+        def author_found(browser: WebDriver) -> bool:
+            authors = browser.find_elements(
+                By.CSS_SELECTOR,
+                "article[data-testid-product-item] "
+                ".product-card__subtitle"
+            )
 
-        except TimeoutException:
-            print("\n--- ДИАГНОСТИКА UI-02 ---")
-            print("Текущий URL:", driver.current_url)
-            print("Заголовок страницы:", driver.title)
+            return any(
+                "стивен кинг" in author.text.casefold()
+                for author in authors
+                if author.is_displayed()
+            )
 
-            search_fields = driver.find_elements(By.ID, "app-search")
-            if search_fields:
-                print(
-                    "Текст в поисковой строке:",
-                    search_fields[0].get_attribute("value")
-                )
-
-            driver.save_screenshot("ui02_failure.png")
-            print("Скриншот сохранён: ui02_failure.png")
-
-            raise
+        WebDriverWait(
+            driver,
+            25,
+            ignored_exceptions=(StaleElementReferenceException,)
+        ).until(
+            author_found,
+            "В результатах поиска нет книг Стивена Кинга"
+        )
