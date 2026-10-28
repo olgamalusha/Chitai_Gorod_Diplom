@@ -1,0 +1,32 @@
+
+# Виртуальное окружение
+.venv/
+venv/
+
+# Кеш Python
+__pycache__/
+*.py[cod]
+
+# Кеш pytest
+.pytest_cache/
+
+# Результаты Allure
+allure-results/
+allure-results-ui/
+allure-report/
+
+# Временные скриншоты диагностики
+ui*_failure.png
+ui*_click_blocked.png
+
+# Файлы редактора
+.vscode/
+.idea/
+
+# Системные файлы
+.DS_Store
+Thumbs.db
+# Диагностические файлы
+catalog_click_error.png
+# Вспомогательные диагностические файлы
+check_browser.py
