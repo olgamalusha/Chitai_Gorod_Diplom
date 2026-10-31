@@ -13,7 +13,10 @@ def guest_token() -> str:
     config_path = Path(__file__).resolve().parents[2] / "config.json"
     config = json.loads(config_path.read_text(encoding="utf-8"))
 
-    driver = webdriver.Chrome()
+    options = webdriver.ChromeOptions()
+    options.add_argument("--headless")
+
+    driver = webdriver.Chrome(options=options)
 
     try:
         driver.get(config["site_url"])

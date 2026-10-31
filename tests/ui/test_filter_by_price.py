@@ -2,14 +2,18 @@
 import json
 import re
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
 
 import allure
 import pytest
+from selenium.common.exceptions import (
+    NoSuchElementException,
+    StaleElementReferenceException,
+)
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.remote.webelement import WebElement
+from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 
@@ -52,6 +56,30 @@ def get_book_price(card: WebElement) -> int:
     return int(digits)
 
 
+def get_visible_book_prices(
+    driver: WebDriver,
+) -> list[tuple[str | None, int]]:
+    cards = driver.find_elements(
+        By.CSS_SELECTOR,
+        "article[data-testid-product-item]"
+    )
+
+    prices = []
+
+    for card in cards:
+        if not card.is_displayed():
+            continue
+
+        book_id = card.get_attribute(
+            "data-testid-product-item"
+        )
+        book_price = get_book_price(card)
+
+        prices.append((book_id, book_price))
+
+    return prices
+
+
 @pytest.mark.ui
 @allure.title("UI-04 — Фильтрация книг по цене")
 @allure.story("Фильтрация книг")
@@ -79,6 +107,12 @@ def test_filter_by_price(driver: WebDriver) -> None:
         fields[0].send_keys(Keys.TAB)
 
     with allure.step("Установить максимальную цену 1000 рублей"):
+        previous_card = WebDriverWait(driver, 20).until(
+            EC.visibility_of_element_located(
+                (By.CSS_SELECTOR, "article[data-testid-product-item]")
+            )
+        )
+
         fields = WebDriverWait(driver, 15).until(
             get_price_fields
         )
@@ -87,44 +121,23 @@ def test_filter_by_price(driver: WebDriver) -> None:
         fields[1].send_keys("1000")
         fields[1].send_keys(Keys.TAB)
 
-    with allure.step("Дождаться применения диапазона в URL"):
-        def filter_applied(browser: WebDriver) -> bool:
-            params = parse_qs(urlparse(browser.current_url).query)
-
-            return (
-                params.get("filters[priceRetailMin]") == ["500"]
-                and params.get("filters[priceRetailMax]") == ["1000"]
-            )
-
-        WebDriverWait(driver, 15).until(filter_applied)
-
-    with allure.step("Обновить страницу с применённым фильтром"):
-        driver.refresh()
-
-        WebDriverWait(driver, 15).until(filter_applied)
-
-    with allure.step("Проверить цены книг в выдаче"):
-        cards = WebDriverWait(driver, 20).until(
-            lambda browser: [
-                card
-                for card in browser.find_elements(
-                    By.CSS_SELECTOR,
-                    "article[data-testid-product-item]"
-                )
-                if card.is_displayed()
-            ] or False
+    with allure.step("Дождаться обновления карточек товаров"):
+        WebDriverWait(driver, 25).until(
+            EC.staleness_of(previous_card)
         )
 
-        checked_prices = []
+    with allure.step("Получить цены обновлённых карточек"):
+        checked_prices = WebDriverWait(
+            driver,
+            30,
+            ignored_exceptions=(
+                StaleElementReferenceException,
+                NoSuchElementException,
+            ),
+        ).until(get_visible_book_prices)
 
-        for card in cards:
-            book_price = get_book_price(card)
-            checked_prices.append(book_price)
-
-            book_id = card.get_attribute(
-                "data-testid-product-item"
-            )
-
+    with allure.step("Проверить цены книг в выдаче"):
+        for book_id, book_price in checked_prices:
             assert 500 <= book_price <= 1000, (
                 f"Книга ID {book_id}: цена {book_price} ₽ "
                 "вне диапазона 500–1000 ₽"
